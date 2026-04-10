@@ -211,3 +211,16 @@ version 1/
 version 2/
 version 2.zip
 _remote_probe/
+paper/
+
+# Runtime artifacts for the Day 1 execution shell and later experiments
+protein_bo_conformal/outputs/results/*
+!protein_bo_conformal/outputs/results/.gitkeep
+protein_bo_conformal/outputs/logs/*
+!protein_bo_conformal/outputs/logs/.gitkeep
+protein_bo_conformal/outputs/checkpoints/*
+!protein_bo_conformal/outputs/checkpoints/.gitkeep
+protein_bo_conformal/outputs/plots/*
+!protein_bo_conformal/outputs/plots/.gitkeep
+protein_bo_conformal/outputs/tables/*
+!protein_bo_conformal/outputs/tables/.gitkeep

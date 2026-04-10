@@ -1,1 +1,62 @@
-# Base runtime configuration for the v2 project.
+experiment:
+  name: day1-shell
+  description: "Research-grade execution shell for closed-loop protein optimization."
+
+runtime:
+  seed: 7
+  deterministic: true
+  device: auto
+  log_level: INFO
+
+dataset:
+  benchmark: flip
+  task: gb1
+  split: low_resource
+  root_dir: data/raw/flip
+  processed_dir: data/processed
+
+representation:
+  name: onehot
+  cache_dir: data/processed/caches
+  batch_size: 64
+
+model:
+  name: ensemble_mlp
+  ensemble_size: 5
+  hidden_dim: 256
+  dropout: 0.1
+
+uq:
+  mode: "none"
+  conformal_enabled: false
+  weighted_conformal_enabled: false
+  alpha: 0.1
+
+acquisition:
+  name: greedy
+  beta: 1.0
+
+proposal:
+  local_ratio: 0.8
+  global_ratio: 0.2
+  batch_size: 8
+
+loop:
+  initial_budget: 32
+  query_batch_size: 8
+  total_rounds: 5
+  total_budget: 72
+
+evaluation:
+  optimization_metrics:
+    best_so_far: true
+    simple_regret: true
+    threshold_hit_time: true
+  reliability_metrics:
+    marginal_coverage: true
+    interval_width: true
+    sharpness: true
+  shift_metrics:
+    embedding_distance: true
+    support_overlap_proxy: true
+    density_ratio_stats: true
