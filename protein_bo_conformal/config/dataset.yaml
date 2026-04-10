@@ -1,1 +1,14 @@
-# Dataset configuration placeholder.
+dataset:
+  registry_name: flip.gb1
+  benchmark: flip
+  task: gb1
+  root_dir: data/raw/flip
+  processed_dir: data/processed
+  split_type: mutation_extrapolation
+  split_seed: 7
+  initial_train_size: 32
+  candidate_pool_size: 256
+  mutation_train_max: 1
+  position_holdout_count: 1
+  fitness_holdout_quantile: 0.75
+  query_sequence_count: 5

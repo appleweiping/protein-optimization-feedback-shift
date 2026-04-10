@@ -224,3 +224,9 @@ protein_bo_conformal/outputs/plots/*
 !protein_bo_conformal/outputs/plots/.gitkeep
 protein_bo_conformal/outputs/tables/*
 !protein_bo_conformal/outputs/tables/.gitkeep
+protein_bo_conformal/data/processed/splits/*
+!protein_bo_conformal/data/processed/splits/.gitkeep
+protein_bo_conformal/data/processed/metadata/*
+!protein_bo_conformal/data/processed/metadata/.gitkeep
+protein_bo_conformal/data/processed/caches/*
+!protein_bo_conformal/data/processed/caches/.gitkeep
