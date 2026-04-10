@@ -1,0 +1,1 @@
+"""Candidate proposal generation utilities."""

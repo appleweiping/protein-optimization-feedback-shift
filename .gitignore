@@ -205,3 +205,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Local research materials not meant for this repo
+version 1/
+version 2/
+version 2.zip
+_remote_probe/

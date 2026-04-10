@@ -1,0 +1,1 @@
+"""Shared representation interface definitions."""
