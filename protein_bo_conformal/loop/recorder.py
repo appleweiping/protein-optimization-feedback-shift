@@ -85,6 +85,7 @@ class LoopRecorder:
         ):
             payload = {
                 "batch_offset": batch_offset,
+                "selected_index": int(selection.selected_indices[batch_offset]),
                 "sequence": record.sequence,
                 "predicted_mean": float(detail.get("mean", 0.0)),
                 "predicted_sigma": float(detail.get("sigma", 0.0)),
@@ -99,6 +100,7 @@ class LoopRecorder:
                 {
                     "label": self.label,
                     "round_index": state_before.round_index,
+                    "selected_index": int(selection.selected_indices[batch_offset]),
                     "sequence": record.sequence,
                     "predicted_mean": payload["predicted_mean"],
                     "predicted_sigma": payload["predicted_sigma"],
@@ -119,13 +121,33 @@ class LoopRecorder:
             "best_so_far_before": float(state_before.best_so_far),
             "best_so_far_after": float(update.next_state.best_so_far),
             "selected_count": len(selected_payloads),
+            "selected_candidate_indices": [int(index) for index in selection.selected_indices],
             "selected": selected_payloads,
             "acquisition_selection": selection.to_dict(),
             "candidate_prediction_summary": {
+                "count": int(predictions["mean"].size),
                 "mean_mu": float(predictions["mean"].mean()) if predictions["mean"].size else 0.0,
+                "std_mu": float(predictions["mean"].std()) if predictions["mean"].size else 0.0,
                 "max_mu": float(predictions["mean"].max()) if predictions["mean"].size else 0.0,
                 "mean_sigma": float(predictions["sigma"].mean()) if predictions["sigma"].size else 0.0,
+                "std_sigma": float(predictions["sigma"].std()) if predictions["sigma"].size else 0.0,
                 "max_sigma": float(predictions["sigma"].max()) if predictions["sigma"].size else 0.0,
+                "p90_sigma": float(np.percentile(predictions["sigma"], 90)) if predictions["sigma"].size else 0.0,
+                "p95_sigma": float(np.percentile(predictions["sigma"], 95)) if predictions["sigma"].size else 0.0,
+            },
+            "selection_shift_hint": {
+                "selected_mean_mu_gap": (
+                    (sum(payload["predicted_mean"] for payload in selected_payloads) / len(selected_payloads))
+                    - float(predictions["mean"].mean())
+                )
+                if selected_payloads and predictions["mean"].size
+                else 0.0,
+                "selected_mean_sigma_gap": (
+                    (sum(payload["predicted_sigma"] for payload in selected_payloads) / len(selected_payloads))
+                    - float(predictions["sigma"].mean())
+                )
+                if selected_payloads and predictions["sigma"].size
+                else 0.0,
             },
             "training_summary": {
                 "aggregate": dict(training_summary.get("aggregate", {})),

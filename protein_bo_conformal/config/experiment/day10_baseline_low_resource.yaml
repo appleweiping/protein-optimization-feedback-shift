@@ -1,0 +1,50 @@
+experiment:
+  name: day10-baseline-low-resource
+  description: "Day 10 low-resource companion baseline for failure analysis."
+  baseline_methods:
+    - random
+    - greedy
+    - ucb
+  random_seeds:
+    - 7
+    - 11
+    - 23
+
+dataset:
+  registry_name: flip.gb1
+  benchmark: flip
+  task: gb1
+  split_type: low_resource
+  diagnostic_split_types:
+    - low_resource
+  initial_train_size: 24
+  candidate_pool_size: 96
+  query_sequence_count: 4
+
+representation:
+  name: onehot
+  onehot_mode: flattened
+  cache_enabled: true
+
+model:
+  hidden_dim: 128
+  dropout: 0.0
+  ensemble_size: 3
+  num_epochs: 25
+  batch_size: 16
+  early_stopping_patience: 6
+  checkpoint_enabled: true
+
+acquisition:
+  name: greedy
+  acquisition_type: greedy
+  batch_size: 8
+  beta: 2.0
+  seed: 7
+
+loop:
+  initial_budget: 24
+  query_batch_size: 8
+  total_rounds: 3
+  total_budget: 48
+  comparison_acquisition_names: []

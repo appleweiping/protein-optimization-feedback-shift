@@ -1,6 +1,6 @@
 experiment:
-  name: day9-evaluation-package
-  description: "Expanded evaluation stage for offline protein optimization under feedback shift."
+  name: day10-failure-analysis
+  description: "Failure-analysis stage for offline protein optimization under feedback shift."
 
 runtime:
   seed: 7

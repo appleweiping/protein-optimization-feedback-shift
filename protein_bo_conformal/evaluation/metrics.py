@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 
 def load_json(path: Path) -> dict[str, Any]:
     """Load a UTF-8 JSON document."""
@@ -64,6 +66,16 @@ def compute_average_round_improvement(loop_summary: dict[str, Any]) -> float:
         for index in range(1, len(curve))
     ]
     return float(sum(improvements) / len(improvements))
+
+
+def _safe_correlation(values_a: list[float], values_b: list[float]) -> float:
+    if len(values_a) != len(values_b) or len(values_a) < 2:
+        return 0.0
+    vector_a = np.asarray(values_a, dtype=np.float32)
+    vector_b = np.asarray(values_b, dtype=np.float32)
+    if float(vector_a.std()) <= 1e-8 or float(vector_b.std()) <= 1e-8:
+        return 0.0
+    return float(np.corrcoef(vector_a, vector_b)[0, 1])
 
 
 def compute_threshold_hit_time(
@@ -127,6 +139,42 @@ def compute_stage_metrics(best_so_far_curve: list[dict[str, float]]) -> dict[str
     }
 
 
+def compute_mu_sigma_correlation(selected_payloads: list[dict[str, Any]]) -> float:
+    """Estimate whether predictive mean and sigma move together on selected samples."""
+    mus = [float(item.get("predicted_mean", 0.0)) for item in selected_payloads]
+    sigmas = [float(item.get("predicted_sigma", 0.0)) for item in selected_payloads]
+    return _safe_correlation(mus, sigmas)
+
+
+def compute_uncertainty_behavior(round_payloads: list[dict[str, Any]]) -> list[dict[str, float]]:
+    """Quantify how uncertainty behaves round by round inside the closed loop."""
+    summaries: list[dict[str, float]] = []
+    for payload in round_payloads:
+        selected = list(payload.get("selected", []))
+        sigmas = [float(item.get("predicted_sigma", 0.0)) for item in selected]
+        absolute_errors = [
+            abs(float(item.get("predicted_mean", 0.0)) - float(item.get("true_fitness", 0.0)))
+            for item in selected
+        ]
+        candidate_summary = payload.get("candidate_prediction_summary", {})
+        summaries.append(
+            {
+                "step": float(payload.get("round_index", 0)) + 1.0,
+                "selected_sigma_mean": float(sum(sigmas) / len(sigmas)) if sigmas else 0.0,
+                "candidate_sigma_mean": float(candidate_summary.get("mean_sigma", 0.0)),
+                "selected_error_mean": float(sum(absolute_errors) / len(absolute_errors)) if absolute_errors else 0.0,
+                "sigma_gap": (
+                    float(sum(sigmas) / len(sigmas)) - float(candidate_summary.get("mean_sigma", 0.0))
+                )
+                if sigmas
+                else 0.0,
+                "mu_sigma_correlation": compute_mu_sigma_correlation(selected),
+                "sigma_error_correlation": _safe_correlation(sigmas, absolute_errors),
+            }
+        )
+    return summaries
+
+
 def summarize_round_selection_stats(round_payloads: list[dict[str, Any]]) -> list[dict[str, float]]:
     """Summarize selected-point statistics for every loop round."""
     summaries: list[dict[str, float]] = []
@@ -136,12 +184,16 @@ def summarize_round_selection_stats(round_payloads: list[dict[str, Any]]) -> lis
             mean_predicted_mu = sum(float(item["predicted_mean"]) for item in selected) / len(selected)
             mean_predicted_sigma = sum(float(item["predicted_sigma"]) for item in selected) / len(selected)
             mean_true_fitness = sum(float(item["true_fitness"]) for item in selected) / len(selected)
+            mean_abs_error = (
+                sum(abs(float(item["predicted_mean"]) - float(item["true_fitness"])) for item in selected) / len(selected)
+            )
             max_true_fitness = max(float(item["true_fitness"]) for item in selected)
             min_true_fitness = min(float(item["true_fitness"]) for item in selected)
         else:
             mean_predicted_mu = 0.0
             mean_predicted_sigma = 0.0
             mean_true_fitness = 0.0
+            mean_abs_error = 0.0
             max_true_fitness = 0.0
             min_true_fitness = 0.0
 
@@ -154,6 +206,7 @@ def summarize_round_selection_stats(round_payloads: list[dict[str, Any]]) -> lis
                 "mean_predicted_mu": float(mean_predicted_mu),
                 "mean_predicted_sigma": float(mean_predicted_sigma),
                 "mean_true_fitness": float(mean_true_fitness),
+                "mean_absolute_error": float(mean_abs_error),
                 "max_true_fitness": float(max_true_fitness),
                 "min_true_fitness": float(min_true_fitness),
                 "candidate_mean_mu": float(candidate_summary.get("mean_mu", 0.0)),
@@ -206,6 +259,7 @@ def build_run_metrics(
     round_stats = summarize_round_selection_stats(round_payloads)
     selection_statistics = compute_selection_statistics(round_stats)
     stage_metrics = compute_stage_metrics(best_so_far_curve)
+    uncertainty_behavior = compute_uncertainty_behavior(round_payloads)
     threshold_hits: dict[str, float | None] = {}
     for fraction in threshold_fractions or []:
         threshold_value = float(global_best_fitness) * float(fraction)
@@ -224,6 +278,7 @@ def build_run_metrics(
         "sample_efficiency_curve": sample_efficiency_curve,
         "round_selection_stats": round_stats,
         "selection_statistics": selection_statistics,
+        "uncertainty_behavior": uncertainty_behavior,
         "stage_metrics": stage_metrics,
         "threshold_hit_times": threshold_hits,
         "round_count": int(loop_summary.get("round_count", 0)),

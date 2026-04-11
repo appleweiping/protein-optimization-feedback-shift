@@ -123,7 +123,11 @@ def _split_low_resource(
     rng.shuffle(shuffled)
     train_size = min(int(config.get("initial_train_size", 8)), len(shuffled))
     train_records = shuffled[:train_size]
-    candidate_records = shuffled[train_size:]
+    candidate_records = _limit_records(
+        shuffled[train_size:],
+        int(config.get("candidate_pool_size", 0)),
+        rng,
+    )
     return train_records, candidate_records, {"strategy": "low_resource"}
 
 

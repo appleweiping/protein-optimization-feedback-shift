@@ -48,8 +48,14 @@ class RepresentationCache:
         if not path.exists():
             self.stats["misses"] += 1
             return None
+        try:
+            vector = np.load(path)
+        except (EOFError, ValueError, OSError):
+            path.unlink(missing_ok=True)
+            self.stats["misses"] += 1
+            return None
         self.stats["hits"] += 1
-        return np.load(path)
+        return vector
 
     def set(self, sequence: str, vector: np.ndarray) -> None:
         """Persist a representation vector for a sequence."""

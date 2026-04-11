@@ -1,0 +1,15 @@
+experiment:
+  name: day10-failure-analysis
+  description: "Failure analysis over baseline trajectories under different shift strengths."
+
+inputs:
+  baseline_summary_globs:
+    - {"label": "mutation_extrapolation", "summary_glob": "outputs/results/baseline/*day9-evaluation-package*/artifacts/baseline_summary.json"}
+    - {"label": "low_resource", "summary_glob": "outputs/results/baseline/*day10-baseline-low-resource*/artifacts/baseline_summary.json"}
+
+analysis:
+  methods:
+    - random
+    - greedy
+    - ucb
+  output_root: outputs/report/failure_analysis

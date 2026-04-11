@@ -149,3 +149,48 @@ def write_summary_latex(
         )
     lines.extend(["\\bottomrule", "\\end{tabular}", ""])
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_failure_analysis_report(
+    path: Path,
+    experiment_name: str,
+    split_summaries: list[dict[str, Any]],
+    overall_conclusions: list[str],
+) -> None:
+    """Write the Day 10 failure analysis note in markdown."""
+    lines = [
+        f"# {experiment_name} failure analysis",
+        "",
+        "## Split summaries",
+        "",
+    ]
+
+    for split_summary in split_summaries:
+        lines.extend(
+            [
+                f"### {split_summary['label']}",
+                "",
+                f"- Dataset: `{split_summary['dataset']}`",
+                f"- Split: `{split_summary['split_type']}`",
+                f"- Shift strength: embedding centroid distance = {split_summary['split_shift']['train_candidate_centroid_l2']:.4f}",
+                f"- Support overlap proxy = {split_summary['split_shift']['support_overlap_proxy']:.4f}",
+                "",
+                "Method-level observations:",
+            ]
+        )
+        for method_summary in split_summary["methods"]:
+            lines.append(
+                "- "
+                + f"`{method_summary['method']}` final best-so-far mean = {method_summary['final_best_so_far_mean']:.4f}, "
+                + f"selected distance gap = {method_summary['selected_distance_gap_mean']:.4f}, "
+                + f"sigma-error corr = {method_summary['sigma_error_correlation_mean']:.4f}, "
+                + f"mu-sigma corr = {method_summary['mu_sigma_correlation_mean']:.4f}"
+            )
+        lines.append("")
+
+    lines.extend(["## Overall conclusions", ""])
+    for conclusion in overall_conclusions:
+        lines.append(f"- {conclusion}")
+
+    lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
