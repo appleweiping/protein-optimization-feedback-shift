@@ -107,10 +107,15 @@ def main() -> int:
     args = parse_args()
     project_root = Path(__file__).resolve().parent
     base_config = project_root / "config" / "base.yaml"
+    default_layers = [project_root / "config" / "dataset.yaml"]
     override_config = Path(args.config).resolve() if args.config else None
 
     try:
-        config = load_config(base_config, override_config)
+        config = load_config(
+            base_config,
+            override_config,
+            default_layer_paths=default_layers,
+        )
         config, config_hash = build_run_config(config, args)
 
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")

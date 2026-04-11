@@ -144,12 +144,14 @@ def summarize_records(records: list[DatasetRecord] | tuple[DatasetRecord, ...]) 
         return {
             "count": 0,
             "sequence_length": None,
-            "fitness": {},
-            "mutation_histogram": {},
-            "position_histogram": {},
-        }
+        "fitness": {},
+        "mutation_histogram": {},
+        "position_histogram": {},
+    }
 
     fitness_values = [record.fitness for record in records]
+    fitness_mean = sum(fitness_values) / len(fitness_values)
+    fitness_variance = sum((value - fitness_mean) ** 2 for value in fitness_values) / len(fitness_values)
     mutation_histogram: dict[str, int] = {}
     position_histogram: dict[str, int] = {}
     for record in records:
@@ -165,7 +167,9 @@ def summarize_records(records: list[DatasetRecord] | tuple[DatasetRecord, ...]) 
         "fitness": {
             "min": min(fitness_values),
             "max": max(fitness_values),
-            "mean": sum(fitness_values) / len(fitness_values),
+            "mean": fitness_mean,
+            "variance": fitness_variance,
+            "std": fitness_variance ** 0.5,
         },
         "mutation_histogram": mutation_histogram,
         "position_histogram": position_histogram,

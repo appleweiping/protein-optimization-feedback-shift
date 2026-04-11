@@ -4,10 +4,11 @@ Research codebase for the version 2 paper project on uncertainty-aware closed-lo
 
 ## Current Stage
 
-The project is currently at the end of `Day 2`.
+The project is currently at the end of `Day 3`.
 
 - `Day 1` established the reproducible execution shell.
 - `Day 2` established the real data environment layer.
+- `Day 3` hardened oracle consistency and split validation.
 
 At this point, the repository can:
 
@@ -15,7 +16,9 @@ At this point, the repository can:
 - standardize them into a shared in-memory dataset format
 - construct shift-aware splits
 - build an immutable oracle
-- validate the data environment through `main.py`
+- validate the data environment and oracle through `main.py`
+- run a cross-benchmark data sanity check entrypoint
+- run unit tests for oracle and validation behavior
 - export run-local summaries, logs, and simple diagnostic plots
 
 The project has not yet entered the method layer for:
@@ -51,6 +54,18 @@ Run it with:
 py -3.12 main.py
 ```
 
+For the Day 3 sanity sweep, run:
+
+```powershell
+py -3.12 experiments\data_sanity_check.py
+```
+
+For lightweight automated tests, run:
+
+```powershell
+py -3.12 -m unittest discover -s tests -p "test_*.py"
+```
+
 ## Output Artifacts
 
 Each run creates a timestamped directory under `outputs/results/` containing:
@@ -60,6 +75,7 @@ Each run creates a timestamped directory under `outputs/results/` containing:
 - `logs/execution.log`
 - `artifacts/dataset_summary.json`
 - `artifacts/split_summary.json`
+- `artifacts/split_suite_summary.json`
 - `artifacts/oracle_validation.json`
 - `artifacts/runner_summary.json`
 - `plots/*.svg`

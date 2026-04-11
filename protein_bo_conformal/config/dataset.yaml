@@ -5,6 +5,11 @@ dataset:
   root_dir: data/raw/flip
   processed_dir: data/processed
   split_type: mutation_extrapolation
+  diagnostic_split_types:
+    - low_resource
+    - mutation_extrapolation
+    - position_extrapolation
+    - fitness_extrapolation
   split_seed: 7
   initial_train_size: 32
   candidate_pool_size: 256
@@ -12,3 +17,11 @@ dataset:
   position_holdout_count: 1
   fitness_holdout_quantile: 0.75
   query_sequence_count: 5
+  validation:
+    enable_oracle_check: true
+    enable_split_check: true
+    enable_query_logging: false
+    validation_seed: 7
+    repeat_query_sequences: 16
+    repeat_query_rounds: 3
+    max_validation_samples: 0

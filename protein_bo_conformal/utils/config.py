@@ -237,11 +237,20 @@ class ConfigNode:
         return value
 
 
-def load_config(base_path: Path, override_path: Path | None = None) -> ConfigNode:
-    """Load the base config and optionally merge an experiment override."""
-    base = load_yaml(base_path)
-    merged = base
+def load_config(
+    base_path: Path,
+    override_path: Path | None = None,
+    default_layer_paths: list[Path] | tuple[Path, ...] | None = None,
+) -> ConfigNode:
+    """Load layered config files and return a merged config node."""
+    merged = load_yaml(base_path)
+
+    for layer_path in default_layer_paths or ():
+        if not layer_path.exists():
+            continue
+        merged = _deep_merge(merged, load_yaml(layer_path))
+
     if override_path is not None:
         override = load_yaml(override_path)
-        merged = _deep_merge(base, override)
+        merged = _deep_merge(merged, override)
     return ConfigNode(merged)

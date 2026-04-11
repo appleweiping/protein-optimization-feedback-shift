@@ -1,6 +1,6 @@
 experiment:
-  name: day2-data-environment
-  description: "Shift-aware data environment construction for offline protein optimization."
+  name: day3-oracle-validation
+  description: "Oracle consistency and split validation for the offline protein optimization environment."
 
 runtime:
   seed: 7

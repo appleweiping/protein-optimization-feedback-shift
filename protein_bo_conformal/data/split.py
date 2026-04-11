@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import random
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,13 @@ class SplitResult:
 
 def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
+
+
+def _variance(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    mean_value = _mean(values)
+    return sum((value - mean_value) ** 2 for value in values) / len(values)
 
 
 def _hamming_distance(seq_a: str, seq_b: str) -> int:
@@ -70,6 +78,26 @@ def _l2_distance(vec_a: list[float], vec_b: list[float]) -> float:
     if not vec_a or not vec_b:
         return 0.0
     return sum((left - right) ** 2 for left, right in zip(vec_a, vec_b)) ** 0.5
+
+
+def _normalize_histogram(counts: dict[str, int]) -> dict[str, float]:
+    total = sum(counts.values())
+    if total <= 0:
+        return {}
+    return {key: value / total for key, value in counts.items()}
+
+
+def _kl_divergence(train_counts: dict[str, int], candidate_counts: dict[str, int]) -> float:
+    epsilon = 1e-12
+    train_distribution = _normalize_histogram(train_counts)
+    candidate_distribution = _normalize_histogram(candidate_counts)
+    keys = sorted({*train_distribution.keys(), *candidate_distribution.keys()})
+    divergence = 0.0
+    for key in keys:
+        left = train_distribution.get(key, 0.0) + epsilon
+        right = candidate_distribution.get(key, 0.0) + epsilon
+        divergence += left * math.log(left / right)
+    return divergence
 
 
 def _limit_records(
@@ -189,6 +217,7 @@ def _split_predefined(
 
 
 def _build_split_statistics(
+    bundle: DatasetBundle,
     train_records: list[DatasetRecord],
     candidate_records: list[DatasetRecord],
 ) -> dict[str, Any]:
@@ -199,9 +228,17 @@ def _build_split_statistics(
     max_length = max(len(record.sequence) for record in train_records + candidate_records)
     train_centroid = _onehot_centroid(train_records, alphabet, max_length)
     candidate_centroid = _onehot_centroid(candidate_records, alphabet, max_length)
+    train_summary = summarize_records(train_records)
+    candidate_summary = summarize_records(candidate_records)
+    train_fitness = [record.fitness for record in train_records]
+    candidate_fitness = [record.fitness for record in candidate_records]
+    train_sequence_set = {record.sequence for record in train_records}
+    candidate_sequence_set = {record.sequence for record in candidate_records}
+    overlap_sequences = sorted(train_sequence_set.intersection(candidate_sequence_set))
+    retained_sequences = train_sequence_set.union(candidate_sequence_set)
     return {
-        "train_summary": summarize_records(train_records),
-        "candidate_summary": summarize_records(candidate_records),
+        "train_summary": train_summary,
+        "candidate_summary": candidate_summary,
         "cross_distance": {
             "candidate_min_distance_mean": _mean([float(value) for value in cross_distances]),
             "candidate_min_distance_max": max(cross_distances) if cross_distances else 0,
@@ -213,6 +250,30 @@ def _build_split_statistics(
             "alphabet_size": len(alphabet),
             "shared_max_length": max_length,
             "train_candidate_centroid_l2": _l2_distance(train_centroid, candidate_centroid),
+        },
+        "fitness_shift": {
+            "train_mean": _mean(train_fitness),
+            "candidate_mean": _mean(candidate_fitness),
+            "train_variance": _variance(train_fitness),
+            "candidate_variance": _variance(candidate_fitness),
+            "mean_gap": _mean(candidate_fitness) - _mean(train_fitness),
+        },
+        "mutation_shift": {
+            "mutation_histogram_kl_divergence": _kl_divergence(
+                train_summary["mutation_histogram"],
+                candidate_summary["mutation_histogram"],
+            ),
+        },
+        "split_validation": {
+            "overlap_count": len(overlap_sequences),
+            "overlap_sequences_preview": overlap_sequences[:10],
+            "train_unique_count": len(train_sequence_set),
+            "candidate_unique_count": len(candidate_sequence_set),
+            "retained_unique_count": len(retained_sequences),
+            "bundle_record_count": len(bundle.records),
+            "dropped_record_count": len(bundle.records) - len(retained_sequences),
+            "retained_fraction": len(retained_sequences) / len(bundle.records) if bundle.records else 0.0,
+            "is_disjoint": not overlap_sequences,
         },
         "support_overlap_proxy": support_overlap,
     }
@@ -252,10 +313,13 @@ def build_split(
     if not candidate_records:
         raise ValueError(f"Split '{split_type}' produced an empty candidate pool.")
 
-    stats = _build_split_statistics(train_records, candidate_records)
+    stats = _build_split_statistics(bundle, train_records, candidate_records)
     stats["split_metadata"] = split_metadata
     stats["dataset_name"] = bundle.name
     stats["split_seed"] = split_seed
+
+    if not stats["split_validation"]["is_disjoint"]:
+        raise ValueError(f"Split '{split_type}' produced overlapping train/candidate records.")
 
     split_id = f"{bundle.name.replace('.', '_')}_{split_type}_seed{split_seed}"
     split_dir = processed_dir / "splits"

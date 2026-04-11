@@ -1,0 +1,13 @@
+experiment:
+  name: day3-data-sanity
+  description: "Cross-benchmark sanity checks for oracle consistency and split queryability."
+
+dataset:
+  validation:
+    enable_oracle_check: true
+    enable_split_check: true
+    enable_query_logging: false
+    validation_seed: 7
+    repeat_query_sequences: 16
+    repeat_query_rounds: 3
+    max_validation_samples: 0
