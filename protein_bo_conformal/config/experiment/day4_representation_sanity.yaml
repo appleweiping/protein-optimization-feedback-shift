@@ -1,0 +1,10 @@
+experiment:
+  name: day4-representation-sanity
+  description: "Representation interface, cache, and compatibility sanity checks."
+
+representation:
+  cache_enabled: true
+  batch_size: 64
+  onehot_mode: flattened
+  esm_backend: auto
+  allow_stub_fallback: true

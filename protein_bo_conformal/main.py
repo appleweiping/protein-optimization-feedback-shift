@@ -107,7 +107,10 @@ def main() -> int:
     args = parse_args()
     project_root = Path(__file__).resolve().parent
     base_config = project_root / "config" / "base.yaml"
-    default_layers = [project_root / "config" / "dataset.yaml"]
+    default_layers = [
+        project_root / "config" / "dataset.yaml",
+        project_root / "config" / "representation.yaml",
+    ]
     override_config = Path(args.config).resolve() if args.config else None
 
     try:

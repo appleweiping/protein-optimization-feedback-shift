@@ -4,11 +4,12 @@ Research codebase for the version 2 paper project on uncertainty-aware closed-lo
 
 ## Current Stage
 
-The project is currently at the end of `Day 3`.
+The project is currently at the end of `Day 4`.
 
 - `Day 1` established the reproducible execution shell.
 - `Day 2` established the real data environment layer.
 - `Day 3` hardened oracle consistency and split validation.
+- `Day 4` established the shared representation layer and cache infrastructure.
 
 At this point, the repository can:
 
@@ -17,13 +18,17 @@ At this point, the repository can:
 - construct shift-aware splits
 - build an immutable oracle
 - validate the data environment and oracle through `main.py`
+- encode sequences through a unified representation interface
+- cache representation vectors by sequence hash
+- use a real `transformers` ESM backend by default, with optional `fair-esm` support
 - run a cross-benchmark data sanity check entrypoint
+- run a representation sanity check entrypoint
 - run unit tests for oracle and validation behavior
+- run unit tests for representation behavior
 - export run-local summaries, logs, and simple diagnostic plots
 
 The project has not yet entered the method layer for:
 
-- representations beyond the current shell interface
 - surrogate training beyond the current environment scaffold
 - conformal / weighted conformal uncertainty modules
 - acquisition policy experiments beyond configuration placeholders
@@ -60,6 +65,12 @@ For the Day 3 sanity sweep, run:
 py -3.12 experiments\data_sanity_check.py
 ```
 
+For the Day 4 representation sweep, run:
+
+```powershell
+py -3.12 experiments\representation_sanity_check.py
+```
+
 For lightweight automated tests, run:
 
 ```powershell
@@ -80,8 +91,14 @@ Each run creates a timestamped directory under `outputs/results/` containing:
 - `artifacts/runner_summary.json`
 - `plots/*.svg`
 
+Day 4 also writes representation summaries under `data/processed/metadata/`, including train/candidate embedding distance and cache statistics.
+
 ## Notes
 
 - Raw benchmark data is expected to exist locally under `data/raw/`.
 - Processed split caches and run artifacts are ignored by Git.
 - The local `paper/` directory is intentionally excluded from GitHub pushes.
+- `ESMEncoder` now defaults to the `transformers` backend with `facebook/esm2_t6_8M_UR50D`.
+- `fair-esm` is also installed and can be selected with `representation.esm_backend: esm`.
+- `stub` mode is still available for lightweight tests or offline fallback.
+- The first real ESM run downloads model weights into the local Hugging Face or Torch cache.
