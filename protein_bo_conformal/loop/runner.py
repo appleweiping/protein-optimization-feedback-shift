@@ -8,11 +8,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
+from acquisition.registry import build_acquisition
 from data.data_loader import load_dataset
 from data.dataset_registry import resolve_dataset
 from data.oracle import Oracle
 from data.split import SplitResult, build_split
 from data.validation import validate_oracle_consistency, validate_split_against_oracle
+from models.checkpoint import CheckpointManager
+from models.ensemble import DeepEnsemble
+from models.trainer import EnsembleTrainer
+from representation.interface import build_encoder
 from utils.config import ConfigNode
 
 
@@ -66,11 +73,13 @@ class ClosedLoopRunner:
         )
         oracle_validation = self._validate_oracle(split_result, dataset_bundle, oracle)
         plot_paths = self._write_split_plots(split_result)
+        acquisition_summary = self._run_selection_check(split_result)
 
         dataset_summary_path = self.artifacts_dir / "dataset_summary.json"
         split_summary_path = self.artifacts_dir / "split_summary.json"
         split_suite_summary_path = self.artifacts_dir / "split_suite_summary.json"
         oracle_validation_path = self.artifacts_dir / "oracle_validation.json"
+        acquisition_summary_path = self.artifacts_dir / "acquisition_summary.json"
         dataset_summary_path.write_text(
             json.dumps(dataset_bundle.to_summary_dict(), indent=2, sort_keys=True),
             encoding="utf-8",
@@ -87,6 +96,11 @@ class ClosedLoopRunner:
             json.dumps(oracle_validation, indent=2, sort_keys=True),
             encoding="utf-8",
         )
+        if acquisition_summary is not None:
+            acquisition_summary_path.write_text(
+                json.dumps(acquisition_summary, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
 
         trace_payload = {
             "run_id": self.context["run_id"],
@@ -101,7 +115,11 @@ class ClosedLoopRunner:
         summary = {
             "run_id": self.context["run_id"],
             "status": "completed",
-            "message": "Day 3 oracle and split validation completed successfully.",
+            "message": (
+                "Day 6 acquisition decision-path validation completed successfully."
+                if acquisition_summary is not None
+                else "Day 3 oracle and split validation completed successfully."
+            ),
             "project_root": str(self.context["project_root"]),
             "config_hash": self.context["config_hash"],
             "seed_report": self.context["seed_report"],
@@ -111,6 +129,7 @@ class ClosedLoopRunner:
             "split_statistics": split_result.statistics,
             "split_suite_summary": split_suite_summary,
             "oracle_validation": oracle_validation,
+            "acquisition_summary": acquisition_summary,
             "plot_paths": plot_paths,
             "outputs": {
                 key: str(value)
@@ -124,6 +143,75 @@ class ClosedLoopRunner:
         summary_path = self.artifacts_dir / "runner_summary.json"
         summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
         self.logger.info("Runner summary written to %s", summary_path)
+        return summary
+
+    def _run_selection_check(self, split_result: SplitResult) -> dict[str, Any] | None:
+        """Run the Day 6 system-level prediction-to-selection check when enabled."""
+        acquisition_config = self.config.acquisition.to_dict()
+        if not bool(acquisition_config.get("enable_selection_check", False)):
+            return None
+
+        encoder = build_encoder(self.config.representation.to_dict(), logger=self.logger)
+        train_sequences = [record.sequence for record in split_result.train_records]
+        train_targets = np.asarray([record.fitness for record in split_result.train_records], dtype=np.float32)
+        candidate_sequences = [record.sequence for record in split_result.candidate_records]
+        candidate_targets = np.asarray([record.fitness for record in split_result.candidate_records], dtype=np.float32)
+        train_features = encoder.encode(train_sequences).astype(np.float32, copy=False)
+        candidate_features = encoder.encode(candidate_sequences).astype(np.float32, copy=False)
+
+        ensemble = DeepEnsemble.from_config(
+            self.config.model.to_dict(),
+            input_dim=int(train_features.shape[1]),
+            device=str(self.context["device_info"]["resolved"]),
+            logger=self.logger,
+        )
+        trainer = EnsembleTrainer(
+            config=self.config.model.to_dict(),
+            device=str(self.context["device_info"]["resolved"]),
+            logger=self.logger,
+            checkpoint_manager=CheckpointManager(self.context["paths"]["checkpoints_dir"], logger=self.logger),
+        )
+        training_summary = trainer.fit(
+            ensemble=ensemble,
+            train_features=train_features,
+            train_targets=train_targets,
+            round_index=0,
+            split_id=split_result.split_id,
+            round_metadata={"stage": "day6_main_selection_check"},
+        )
+
+        predictions = ensemble.predict_with_uncertainty(
+            candidate_features,
+            batch_size=int(self.config.model.batch_size),
+        )
+        predictions["best_observed"] = np.asarray(float(train_targets.max()), dtype=np.float32)
+        acquisition = build_acquisition(acquisition_config)
+        selection = acquisition.select(
+            candidates=list(split_result.candidate_records),
+            predictions=predictions,
+            batch_size=int(acquisition_config.get("batch_size", 1)),
+        )
+        selected_true_fitness = [float(candidate_targets[index]) for index in selection.selected_indices]
+        summary = {
+            "enabled": True,
+            "acquisition_name": acquisition.name,
+            "training_summary": training_summary,
+            "candidate_prediction_summary": {
+                "mean_mu": float(predictions["mean"].mean()),
+                "max_mu": float(predictions["mean"].max()),
+                "mean_sigma": float(predictions["sigma"].mean()),
+                "max_sigma": float(predictions["sigma"].max()),
+            },
+            "selection": selection.to_dict(),
+            "selected_sequences": [split_result.candidate_records[index].sequence for index in selection.selected_indices],
+            "selected_true_fitness": selected_true_fitness,
+            "successful": True,
+        }
+        self.logger.info(
+            "Selection check completed with acquisition '%s' and batch size %s.",
+            acquisition.name,
+            selection.batch_size,
+        )
         return summary
 
     def _build_split_suite(

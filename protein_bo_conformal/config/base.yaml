@@ -1,6 +1,6 @@
 experiment:
-  name: day5-surrogate-foundation
-  description: "Foundation and surrogate-layer validation for the offline protein optimization environment."
+  name: day6-acquisition-foundation
+  description: "Foundation, surrogate, and acquisition-layer validation for the offline protein optimization environment."
 
 runtime:
   seed: 7

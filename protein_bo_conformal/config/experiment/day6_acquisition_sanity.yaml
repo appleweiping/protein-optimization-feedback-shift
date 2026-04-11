@@ -1,0 +1,41 @@
+experiment:
+  name: day6-acquisition-sanity
+
+dataset:
+  registry_name: flip.aav
+  benchmark: flip
+  task: aav
+  split_type: low_resource
+  initial_train_size: 64
+  candidate_pool_size: 36
+
+representation:
+  name: onehot
+  onehot_mode: flattened
+  cache_enabled: true
+
+model:
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.0
+  ensemble_size: 5
+  learning_rate: 0.001
+  num_epochs: 60
+  batch_size: 16
+  validation_fraction: 0.25
+  early_stopping_patience: 8
+  bootstrap_members: true
+
+acquisition:
+  name: ucb
+  acquisition_type: ucb
+  batch_size: 8
+  beta: 2.0
+  xi: 0.0
+  seed: 7
+  enable_selection_check: true
+  sanity_methods:
+    - random
+    - greedy
+    - ucb
+    - ei

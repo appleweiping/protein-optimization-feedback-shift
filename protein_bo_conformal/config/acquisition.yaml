@@ -1,1 +1,13 @@
-# Acquisition strategy configuration placeholder.
+acquisition:
+  name: greedy
+  acquisition_type: greedy
+  batch_size: 8
+  beta: 2.0
+  xi: 0.0
+  seed: 7
+  enable_selection_check: false
+  sanity_methods:
+    - random
+    - greedy
+    - ucb
+    - ei

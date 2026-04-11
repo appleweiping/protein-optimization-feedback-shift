@@ -111,6 +111,7 @@ def main() -> int:
         project_root / "config" / "dataset.yaml",
         project_root / "config" / "representation.yaml",
         project_root / "config" / "model.yaml",
+        project_root / "config" / "acquisition.yaml",
     ]
     override_config = Path(args.config).resolve() if args.config else None
 
