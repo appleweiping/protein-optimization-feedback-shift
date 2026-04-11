@@ -1,6 +1,6 @@
 experiment:
-  name: day7-closed-loop-foundation
-  description: "Closed-loop execution foundation for the offline protein optimization system."
+  name: day8-baseline-evidence
+  description: "Baseline evaluation stage for offline protein optimization under feedback shift."
 
 runtime:
   seed: 7
