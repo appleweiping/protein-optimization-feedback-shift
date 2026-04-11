@@ -1,4 +1,4 @@
-"""Closed-loop experiment runner shell for the Day 2/3 data foundation work."""
+"""Closed-loop system runner for the Day 7 execution milestone."""
 
 from __future__ import annotations
 
@@ -11,11 +11,15 @@ from typing import Any
 import numpy as np
 
 from acquisition.registry import build_acquisition
-from data.data_loader import load_dataset
+from data.data_loader import DatasetBundle, load_dataset
 from data.dataset_registry import resolve_dataset
 from data.oracle import Oracle
 from data.split import SplitResult, build_split
 from data.validation import validate_oracle_consistency, validate_split_against_oracle
+from loop.buffer import ClosedLoopBuffer
+from loop.recorder import LoopRecorder
+from loop.state import LoopState
+from loop.stopping import LoopStopping
 from models.checkpoint import CheckpointManager
 from models.ensemble import DeepEnsemble
 from models.trainer import EnsembleTrainer
@@ -24,19 +28,21 @@ from utils.config import ConfigNode
 
 
 class ClosedLoopRunner:
-    """Minimal runner that validates the data environment and oracle foundation."""
+    """Single execution core that runs the full closed-loop optimization system."""
 
     def __init__(self, config: ConfigNode, logger: Any, context: dict[str, Any]) -> None:
         self.config = config
         self.logger = logger
         self.context = context
+        self.run_dir = Path(context["paths"]["run_dir"])
         self.artifacts_dir = Path(context["paths"]["artifacts_dir"])
         self.plots_dir = Path(context["paths"]["plots_dir"])
+        self.tables_dir = Path(context["paths"]["tables_dir"])
+        self.checkpoints_dir = Path(context["paths"]["checkpoints_dir"])
 
     def run(self) -> dict[str, Any]:
-        """Run the Day 2/3 data-environment validation flow."""
-        self.logger.info("Runner initialized for experiment '%s'.", self.config.experiment.name)
-        self.logger.info("Validating config sections and constructing the data environment.")
+        """Build the environment, validate it, and execute the closed loop."""
+        self.logger.info("Closed-loop runner initialized for experiment '%s'.", self.config.experiment.name)
 
         required_sections = (
             "experiment",
@@ -65,21 +71,20 @@ class ClosedLoopRunner:
             dataset_bundle,
             processed_dir=project_root / "data" / "processed",
         )
-        validation_config = dict(self.config.dataset.to_dict().get("validation", {}))
         oracle = Oracle(
             dataset_bundle.records,
             logger=self.logger,
-            enable_query_logging=bool(validation_config.get("enable_query_logging", False)),
+            enable_query_logging=bool(self.config.dataset.to_dict().get("validation", {}).get("enable_query_logging", False)),
         )
         oracle_validation = self._validate_oracle(split_result, dataset_bundle, oracle)
         plot_paths = self._write_split_plots(split_result)
-        acquisition_summary = self._run_selection_check(split_result)
+        loop_suite_summary = self._run_closed_loop_suite(split_result, oracle)
 
         dataset_summary_path = self.artifacts_dir / "dataset_summary.json"
         split_summary_path = self.artifacts_dir / "split_summary.json"
         split_suite_summary_path = self.artifacts_dir / "split_suite_summary.json"
         oracle_validation_path = self.artifacts_dir / "oracle_validation.json"
-        acquisition_summary_path = self.artifacts_dir / "acquisition_summary.json"
+        loop_suite_summary_path = self.artifacts_dir / "loop_suite_summary.json"
         dataset_summary_path.write_text(
             json.dumps(dataset_bundle.to_summary_dict(), indent=2, sort_keys=True),
             encoding="utf-8",
@@ -96,18 +101,17 @@ class ClosedLoopRunner:
             json.dumps(oracle_validation, indent=2, sort_keys=True),
             encoding="utf-8",
         )
-        if acquisition_summary is not None:
-            acquisition_summary_path.write_text(
-                json.dumps(acquisition_summary, indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
+        loop_suite_summary_path.write_text(
+            json.dumps(loop_suite_summary, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
 
         trace_payload = {
             "run_id": self.context["run_id"],
-            "stage": "day3_oracle_validation",
+            "stage": "day7_closed_loop",
             "status": "ok",
             "timestamp": datetime.now().isoformat(timespec="seconds"),
-            "message": "Data environment, split validation, and oracle consistency checks completed.",
+            "message": "Closed-loop system execution completed.",
         }
         trace_path = self.artifacts_dir / "runner_trace.jsonl"
         trace_path.write_text(json.dumps(trace_payload) + "\n", encoding="utf-8")
@@ -115,11 +119,7 @@ class ClosedLoopRunner:
         summary = {
             "run_id": self.context["run_id"],
             "status": "completed",
-            "message": (
-                "Day 6 acquisition decision-path validation completed successfully."
-                if acquisition_summary is not None
-                else "Day 3 oracle and split validation completed successfully."
-            ),
+            "message": "Day 7 closed-loop foundation completed successfully.",
             "project_root": str(self.context["project_root"]),
             "config_hash": self.context["config_hash"],
             "seed_report": self.context["seed_report"],
@@ -129,7 +129,7 @@ class ClosedLoopRunner:
             "split_statistics": split_result.statistics,
             "split_suite_summary": split_suite_summary,
             "oracle_validation": oracle_validation,
-            "acquisition_summary": acquisition_summary,
+            "loop_suite_summary": loop_suite_summary,
             "plot_paths": plot_paths,
             "outputs": {
                 key: str(value)
@@ -139,80 +139,224 @@ class ClosedLoopRunner:
             "validated_sections": list(required_sections),
             "started_at": datetime.now().isoformat(timespec="seconds"),
         }
-
         summary_path = self.artifacts_dir / "runner_summary.json"
         summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
         self.logger.info("Runner summary written to %s", summary_path)
         return summary
 
-    def _run_selection_check(self, split_result: SplitResult) -> dict[str, Any] | None:
-        """Run the Day 6 system-level prediction-to-selection check when enabled."""
-        acquisition_config = self.config.acquisition.to_dict()
-        if not bool(acquisition_config.get("enable_selection_check", False)):
-            return None
+    def _run_closed_loop_suite(
+        self,
+        split_result: SplitResult,
+        oracle: Oracle,
+    ) -> dict[str, Any]:
+        """Run the primary acquisition loop plus any configured Day 7 comparison loops."""
+        loop_config = self.config.loop.to_dict()
+        primary_name = str(self.config.acquisition.name)
+        comparison_names = list(loop_config.get("comparison_acquisition_names", []) or [])
+        ordered_names: list[str] = []
+        for name in [primary_name, *comparison_names]:
+            normalized = str(name).strip().lower()
+            if normalized and normalized not in ordered_names:
+                ordered_names.append(normalized)
 
-        encoder = build_encoder(self.config.representation.to_dict(), logger=self.logger)
-        train_sequences = [record.sequence for record in split_result.train_records]
-        train_targets = np.asarray([record.fitness for record in split_result.train_records], dtype=np.float32)
-        candidate_sequences = [record.sequence for record in split_result.candidate_records]
-        candidate_targets = np.asarray([record.fitness for record in split_result.candidate_records], dtype=np.float32)
-        train_features = encoder.encode(train_sequences).astype(np.float32, copy=False)
-        candidate_features = encoder.encode(candidate_sequences).astype(np.float32, copy=False)
+        suite_results: dict[str, Any] = {}
+        for acquisition_name in ordered_names:
+            acquisition_config = dict(self.config.acquisition.to_dict())
+            acquisition_config["name"] = acquisition_name
+            acquisition_config["acquisition_type"] = acquisition_name
+            self.logger.info("Starting closed loop for acquisition '%s'.", acquisition_name)
+            suite_results[acquisition_name] = self._run_single_loop(
+                split_result=split_result,
+                oracle=oracle,
+                acquisition_config=acquisition_config,
+                label=acquisition_name,
+            )
 
-        ensemble = DeepEnsemble.from_config(
-            self.config.model.to_dict(),
-            input_dim=int(train_features.shape[1]),
-            device=str(self.context["device_info"]["resolved"]),
-            logger=self.logger,
-        )
-        trainer = EnsembleTrainer(
-            config=self.config.model.to_dict(),
-            device=str(self.context["device_info"]["resolved"]),
-            logger=self.logger,
-            checkpoint_manager=CheckpointManager(self.context["paths"]["checkpoints_dir"], logger=self.logger),
-        )
-        training_summary = trainer.fit(
-            ensemble=ensemble,
-            train_features=train_features,
-            train_targets=train_targets,
-            round_index=0,
-            split_id=split_result.split_id,
-            round_metadata={"stage": "day6_main_selection_check"},
-        )
-
-        predictions = ensemble.predict_with_uncertainty(
-            candidate_features,
-            batch_size=int(self.config.model.batch_size),
-        )
-        predictions["best_observed"] = np.asarray(float(train_targets.max()), dtype=np.float32)
-        acquisition = build_acquisition(acquisition_config)
-        selection = acquisition.select(
-            candidates=list(split_result.candidate_records),
-            predictions=predictions,
-            batch_size=int(acquisition_config.get("batch_size", 1)),
-        )
-        selected_true_fitness = [float(candidate_targets[index]) for index in selection.selected_indices]
-        summary = {
-            "enabled": True,
-            "acquisition_name": acquisition.name,
-            "training_summary": training_summary,
-            "candidate_prediction_summary": {
-                "mean_mu": float(predictions["mean"].mean()),
-                "max_mu": float(predictions["mean"].max()),
-                "mean_sigma": float(predictions["sigma"].mean()),
-                "max_sigma": float(predictions["sigma"].max()),
-            },
-            "selection": selection.to_dict(),
-            "selected_sequences": [split_result.candidate_records[index].sequence for index in selection.selected_indices],
-            "selected_true_fitness": selected_true_fitness,
-            "successful": True,
+        return {
+            "ordered_methods": ordered_names,
+            "methods": suite_results,
+            "checks": self._build_suite_checks(suite_results),
+            "comparison_plot_path": str(self._write_suite_curve_svg(suite_results, split_result.split_id)),
+            "successful": all(result.get("successful", False) for result in suite_results.values()),
         }
-        self.logger.info(
-            "Selection check completed with acquisition '%s' and batch size %s.",
-            acquisition.name,
-            selection.batch_size,
+
+    def _run_single_loop(
+        self,
+        split_result: SplitResult,
+        oracle: Oracle,
+        acquisition_config: dict[str, Any],
+        label: str,
+    ) -> dict[str, Any]:
+        """Execute one full train→predict→select→query→update loop."""
+        state = LoopState.initialize(
+            observed_pool=split_result.train_records,
+            candidate_pool=split_result.candidate_records,
         )
-        return summary
+        recorder = LoopRecorder(self.context["paths"], label=label, logger=self.logger)
+        recorder.record_initial_state(state, acquisition_name=label, split_id=split_result.split_id)
+        encoder = build_encoder(self.config.representation.to_dict(), logger=self.logger)
+        buffer = ClosedLoopBuffer(logger=self.logger)
+        stopping = LoopStopping.from_config(self.config.loop.to_dict())
+        device = str(self.context["device_info"]["resolved"])
+        split_id = f"{split_result.split_id}_{label}"
+        checkpoint_root = self.checkpoints_dir / label
+
+        stop_decision = stopping.decide(state)
+        while not stop_decision.stop:
+            observed_sequences = [record.sequence for record in state.observed_pool]
+            observed_targets = np.asarray([record.fitness for record in state.observed_pool], dtype=np.float32)
+            candidate_sequences = [record.sequence for record in state.candidate_pool]
+            train_features = encoder.encode(observed_sequences).astype(np.float32, copy=False)
+            candidate_features = encoder.encode(candidate_sequences).astype(np.float32, copy=False)
+
+            ensemble = DeepEnsemble.from_config(
+                self.config.model.to_dict(),
+                input_dim=int(train_features.shape[1]),
+                device=device,
+                logger=self.logger,
+            )
+            trainer = EnsembleTrainer(
+                config=self.config.model.to_dict(),
+                device=device,
+                logger=self.logger,
+                checkpoint_manager=CheckpointManager(checkpoint_root, logger=self.logger),
+            )
+            training_summary = trainer.fit(
+                ensemble=ensemble,
+                train_features=train_features,
+                train_targets=observed_targets,
+                round_index=state.round_index,
+                split_id=split_id,
+                round_metadata={
+                    "loop_label": label,
+                    "observed_count": state.observed_count,
+                    "candidate_count": state.candidate_count,
+                },
+            )
+
+            predictions = ensemble.predict_with_uncertainty(
+                candidate_features,
+                batch_size=int(self.config.model.batch_size),
+            )
+            predictions["best_observed"] = np.asarray(float(state.best_so_far), dtype=np.float32)
+            acquisition = build_acquisition(acquisition_config)
+            selection = acquisition.select(
+                candidates=list(state.candidate_pool),
+                predictions=predictions,
+                batch_size=stop_decision.next_batch_size,
+            )
+            selected_sequences = [
+                state.candidate_pool[index].sequence
+                for index in selection.selected_indices
+            ]
+            oracle_results = oracle.batch_query(
+                selected_sequences,
+                source=f"loop_{label}_round_{state.round_index}",
+                log_query=False,
+                record_history=True,
+            )
+            update = buffer.apply_selection(
+                state=state,
+                selection=selection,
+                oracle_results=oracle_results,
+            )
+            recorder.record_round(
+                state_before=state,
+                update=update,
+                predictions=predictions,
+                selection=selection,
+                training_summary=training_summary,
+            )
+            self.logger.info(
+                "Loop '%s' round=%s observed=%s candidate=%s selected=%s best_so_far=%.6f",
+                label,
+                state.round_index,
+                state.observed_count,
+                state.candidate_count,
+                len(selection.selected_indices),
+                update.next_state.best_so_far,
+            )
+            state = update.next_state
+            stop_decision = stopping.decide(state)
+
+        return recorder.finalize(final_state=state, stop_decision=stop_decision)
+
+    def _build_suite_checks(self, suite_results: dict[str, Any]) -> dict[str, Any]:
+        """Summarize simple Day 7 sanity comparisons across acquisition methods."""
+        checks: dict[str, Any] = {}
+        if "random" in suite_results and "greedy" in suite_results:
+            checks["greedy_final_best_gte_random"] = (
+                suite_results["greedy"]["final_best_so_far"] >= suite_results["random"]["final_best_so_far"]
+            )
+        if "greedy" in suite_results and "ucb" in suite_results:
+            checks["ucb_differs_from_greedy"] = (
+                suite_results["greedy"]["trajectory"] != suite_results["ucb"]["trajectory"]
+            )
+        if "random" in suite_results and "ucb" in suite_results:
+            checks["ucb_final_best_gte_random"] = (
+                suite_results["ucb"]["final_best_so_far"] >= suite_results["random"]["final_best_so_far"]
+            )
+        return checks
+
+    def _write_suite_curve_svg(self, suite_results: dict[str, Any], split_id: str) -> Path:
+        """Write a comparison SVG for best-so-far trajectories across methods."""
+        path = self.plots_dir / f"{split_id}_loop_suite_best_so_far.svg"
+        width = 820
+        height = 440
+        margin = 56
+        colors = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed"]
+        all_points = [
+            point
+            for result in suite_results.values()
+            for point in result.get("trajectory", [])
+        ]
+        if not all_points:
+            path.write_text("<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'></svg>", encoding="utf-8")
+            return path
+
+        xs = [float(point["step"]) for point in all_points]
+        ys = [float(point["best_so_far"]) for point in all_points]
+        min_x = min(xs)
+        max_x = max(xs)
+        min_y = min(ys)
+        max_y = max(ys)
+        span_x = max(max_x - min_x, 1.0)
+        span_y = max(max_y - min_y, 1e-6)
+
+        def map_x(value: float) -> float:
+            return margin + ((value - min_x) / span_x) * (width - 2 * margin)
+
+        def map_y(value: float) -> float:
+            return height - margin - ((value - min_y) / span_y) * (height - 2 * margin)
+
+        lines: list[str] = []
+        legend: list[str] = []
+        for index, (label, result) in enumerate(suite_results.items()):
+            color = colors[index % len(colors)]
+            trajectory = result.get("trajectory", [])
+            points = " ".join(
+                f"{map_x(float(point['step'])):.1f},{map_y(float(point['best_so_far'])):.1f}"
+                for point in trajectory
+            )
+            lines.append(f"<polyline fill='none' stroke='{color}' stroke-width='2.4' points='{points}' />")
+            legend_y = 44 + index * 18
+            legend.append(f"<rect x='{width - 190}' y='{legend_y}' width='12' height='12' fill='{color}' />")
+            legend.append(
+                f"<text x='{width - 170}' y='{legend_y + 10}' font-size='12' font-family='Arial'>{label}</text>"
+            )
+
+        svg = f"""<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}'>
+<rect width='100%' height='100%' fill='white' />
+<text x='{width / 2:.1f}' y='28' text-anchor='middle' font-size='18' font-family='Arial'>Day 7 loop comparison: best-so-far</text>
+<line x1='{margin}' y1='{height - margin}' x2='{width - margin}' y2='{height - margin}' stroke='black' />
+<line x1='{margin}' y1='{margin}' x2='{margin}' y2='{height - margin}' stroke='black' />
+{''.join(lines)}
+{''.join(legend)}
+<text x='{width - margin}' y='{height - margin + 24}' text-anchor='end' font-size='11'>round</text>
+<text x='{margin - 8}' y='{margin - 10}' text-anchor='start' font-size='11'>fitness</text>
+</svg>"""
+        path.write_text(svg, encoding="utf-8")
+        return path
 
     def _build_split_suite(
         self,

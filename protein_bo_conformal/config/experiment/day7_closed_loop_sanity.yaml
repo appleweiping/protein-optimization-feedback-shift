@@ -1,0 +1,43 @@
+experiment:
+  name: day7-closed-loop-sanity
+  description: "Minimal Day 7 closed-loop validation with random, greedy, and UCB."
+
+dataset:
+  registry_name: flip.gb1
+  benchmark: flip
+  task: gb1
+  split_type: mutation_extrapolation
+  initial_train_size: 24
+  candidate_pool_size: 96
+  query_sequence_count: 4
+
+representation:
+  name: onehot
+  onehot_mode: flattened
+  cache_enabled: true
+
+model:
+  hidden_dim: 128
+  dropout: 0.0
+  ensemble_size: 3
+  num_epochs: 30
+  batch_size: 16
+  early_stopping_patience: 6
+  checkpoint_enabled: true
+
+acquisition:
+  name: greedy
+  acquisition_type: greedy
+  batch_size: 8
+  beta: 2.0
+  seed: 7
+
+loop:
+  initial_budget: 24
+  query_batch_size: 8
+  total_rounds: 3
+  total_budget: 48
+  comparison_acquisition_names:
+    - random
+    - greedy
+    - ucb

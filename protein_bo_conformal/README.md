@@ -4,7 +4,7 @@ Research codebase for the version 2 paper project on uncertainty-aware closed-lo
 
 ## Current Stage
 
-The project is currently at the end of `Day 6`.
+The project is currently at the end of `Day 7`.
 
 - `Day 1` established the reproducible execution shell.
 - `Day 2` established the real data environment layer.
@@ -12,6 +12,7 @@ The project is currently at the end of `Day 6`.
 - `Day 4` established the shared representation layer and cache infrastructure.
 - `Day 5` established the surrogate layer, deep ensemble baseline, training loop, and checkpoint flow.
 - `Day 6` established the acquisition layer and the prediction-to-selection decision path.
+- `Day 7` established the executable closed-loop runner, explicit loop state, recorder, and multi-round optimization traces.
 
 At this point, the repository can:
 
@@ -30,10 +31,12 @@ At this point, the repository can:
 - export `mu`, `sigma`, member diversity, and basic surrogate plots
 - build decision rules from surrogate outputs through random, greedy, UCB, EI, and conformal-UCB interfaces
 - run acquisition sanity checks and system-level prediction-to-selection validation
+- run a real train→predict→select→query→update closed loop with structured per-round logs
 - run unit tests for oracle and validation behavior
 - run unit tests for representation behavior
 - run unit tests for surrogate behavior
 - run unit tests for acquisition behavior
+- run unit tests for loop state, buffer, and stopping behavior
 - export run-local summaries, logs, and simple diagnostic plots
 
 The project has not yet entered the method layer for:
@@ -91,6 +94,12 @@ For the Day 6 acquisition sanity sweep, run:
 py -3.12 experiments\acquisition_sanity_check.py
 ```
 
+For the Day 7 closed-loop sanity sweep, run:
+
+```powershell
+py -3.12 main.py --config config\experiment\day7_closed_loop_sanity.yaml --name day7-closed-loop-sanity
+```
+
 For lightweight automated tests, run:
 
 ```powershell
@@ -114,6 +123,7 @@ Each run creates a timestamped directory under `outputs/results/` containing:
 Day 4 also writes representation summaries under `data/processed/metadata/`, including train/candidate embedding distance and cache statistics.
 Day 5 additionally writes surrogate summaries, prediction tables, and per-member checkpoints under each run directory.
 Day 6 additionally writes acquisition selections, decision diagnostics, and selection comparison plots.
+Day 7 additionally writes per-method loop round traces, selected-sample tables, best-so-far trajectories, and closed-loop suite comparisons.
 
 ## Notes
 

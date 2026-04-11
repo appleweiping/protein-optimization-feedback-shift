@@ -1,6 +1,6 @@
 experiment:
-  name: day6-acquisition-foundation
-  description: "Foundation, surrogate, and acquisition-layer validation for the offline protein optimization environment."
+  name: day7-closed-loop-foundation
+  description: "Closed-loop execution foundation for the offline protein optimization system."
 
 runtime:
   seed: 7
@@ -54,6 +54,7 @@ loop:
   query_batch_size: 8
   total_rounds: 5
   total_budget: 72
+  comparison_acquisition_names: []
 
 evaluation:
   optimization_metrics:
