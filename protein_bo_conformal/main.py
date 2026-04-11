@@ -110,6 +110,7 @@ def main() -> int:
     default_layers = [
         project_root / "config" / "dataset.yaml",
         project_root / "config" / "representation.yaml",
+        project_root / "config" / "model.yaml",
     ]
     override_config = Path(args.config).resolve() if args.config else None
 

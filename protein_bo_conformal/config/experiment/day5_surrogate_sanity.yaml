@@ -1,0 +1,28 @@
+experiment:
+  name: day5-surrogate-sanity
+
+dataset:
+  registry_name: flip.aav
+  benchmark: flip
+  task: aav
+  split_type: low_resource
+  initial_train_size: 64
+  candidate_pool_size: 36
+
+representation:
+  name: onehot
+  onehot_mode: flattened
+  cache_enabled: true
+
+model:
+  sanity_small_train_size: 4
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.0
+  ensemble_size: 5
+  learning_rate: 0.001
+  num_epochs: 60
+  batch_size: 16
+  validation_fraction: 0.25
+  early_stopping_patience: 8
+  bootstrap_members: true

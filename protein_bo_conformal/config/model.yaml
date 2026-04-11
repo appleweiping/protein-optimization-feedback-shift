@@ -1,1 +1,20 @@
-# Model configuration placeholder.
+model:
+  model_type: ensemble_mlp
+  base_model: mlp
+  hidden_dim: 128
+  num_layers: 2
+  activation: relu
+  dropout: 0.1
+  ensemble_size: 5
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  num_epochs: 80
+  batch_size: 32
+  validation_fraction: 0.2
+  early_stopping_patience: 10
+  early_stopping_min_delta: 0.0001
+  gradient_clip_norm: 5.0
+  bootstrap_members: true
+  checkpoint_enabled: true
+  seed: 7
+  sanity_small_train_size: 16
