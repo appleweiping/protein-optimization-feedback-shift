@@ -4,7 +4,7 @@ Research codebase for the version 2 paper project on uncertainty-aware closed-lo
 
 ## Current Stage
 
-The project is currently at the end of `Day 8`.
+The project is currently at the end of `Day 9`.
 
 - `Day 1` established the reproducible execution shell.
 - `Day 2` established the real data environment layer.
@@ -14,6 +14,7 @@ The project is currently at the end of `Day 8`.
 - `Day 6` established the acquisition layer and the prediction-to-selection decision path.
 - `Day 7` established the executable closed-loop runner, explicit loop state, recorder, and multi-round optimization traces.
 - `Day 8` established the standardized baseline evaluation suite, aggregate metrics, baseline plots, and first analysis note.
+- `Day 9` established the full evaluation package, summary tables, threshold-hit analysis, seed stability diagnostics, and stage-wise plots.
 
 At this point, the repository can:
 
@@ -34,6 +35,8 @@ At this point, the repository can:
 - run acquisition sanity checks and system-level prediction-to-selection validation
 - run standardized multi-seed baseline evaluation over `random`, `greedy`, and `ucb`
 - aggregate best-so-far, simple regret, and selected-sample statistics from recorder outputs
+- export threshold-hit summaries, seed-stability diagnostics, and early/late stage efficiency comparisons
+- export CSV and LaTeX summary tables for the baseline package
 - run a real train→predict→select→query→update closed loop with structured per-round logs
 - run unit tests for oracle and validation behavior
 - run unit tests for representation behavior
@@ -110,6 +113,12 @@ For the Day 8 baseline evaluation suite, run:
 py -3.12 experiments\baseline_eval.py --config config\experiment\day8_baseline_greedy_ucb.yaml
 ```
 
+For the Day 9 evaluation package, run:
+
+```powershell
+py -3.12 experiments\baseline_eval.py --config config\experiment\day9_evaluation_package.yaml --name day9-evaluation-package
+```
+
 For lightweight automated tests, run:
 
 ```powershell
@@ -135,6 +144,7 @@ Day 5 additionally writes surrogate summaries, prediction tables, and per-member
 Day 6 additionally writes acquisition selections, decision diagnostics, and selection comparison plots.
 Day 7 additionally writes per-method loop round traces, selected-sample tables, best-so-far trajectories, and closed-loop suite comparisons.
 Day 8 additionally writes multi-seed baseline summaries under `outputs/results/baseline/`, including aggregate curves, scalar comparison plots, and a baseline analysis note.
+Day 9 additionally writes threshold-hit summaries, seed-stability diagnostics, stage-efficiency plots, and CSV/LaTeX baseline tables.
 
 ## Notes
 

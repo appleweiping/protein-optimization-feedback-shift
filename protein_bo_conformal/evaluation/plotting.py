@@ -135,3 +135,60 @@ def write_bar_svg(
 
     body = "".join(bars) + f"<text x='{margin - 10}' y='{margin - 12}' text-anchor='start' font-size='11'>{y_label}</text>"
     path.write_text(_svg_shell(title, width, height, body), encoding="utf-8")
+
+
+def write_grouped_bar_svg(
+    path: Path,
+    title: str,
+    grouped_values: dict[str, dict[str, float]],
+    y_label: str,
+) -> None:
+    """Write grouped bars, for example early-stage vs late-stage metrics per method."""
+    width = 860
+    height = 440
+    margin = 58
+    methods = list(grouped_values.keys())
+    series = sorted({name for values in grouped_values.values() for name in values.keys()})
+    if not methods or not series:
+        path.write_text(_svg_shell(title, width, height, ""), encoding="utf-8")
+        return
+
+    palette = ["#2563eb", "#dc2626", "#059669", "#7c3aed"]
+    max_value = max(value for values in grouped_values.values() for value in values.values())
+    min_value = min(0.0, min(value for values in grouped_values.values() for value in values.values()))
+    span = max(max_value - min_value, 1e-6)
+    group_width = (width - 2 * margin) / max(len(methods), 1)
+    inner_width = group_width * 0.75
+    bar_width = inner_width / max(len(series), 1)
+
+    layers: list[str] = [
+        f"<line x1='{margin}' y1='{height - margin}' x2='{width - margin}' y2='{height - margin}' stroke='black' />",
+        f"<line x1='{margin}' y1='{margin}' x2='{margin}' y2='{height - margin}' stroke='black' />",
+    ]
+    legend: list[str] = []
+    for method_index, method in enumerate(methods):
+        group_start = margin + method_index * group_width + (group_width - inner_width) / 2
+        for series_index, series_name in enumerate(series):
+            value = float(grouped_values.get(method, {}).get(series_name, 0.0))
+            normalized = (value - min_value) / span
+            bar_height = normalized * (height - 2 * margin)
+            x = group_start + series_index * bar_width
+            y = height - margin - bar_height
+            color = palette[series_index % len(palette)]
+            layers.append(
+                f"<rect x='{x:.1f}' y='{y:.1f}' width='{bar_width * 0.8:.1f}' height='{bar_height:.1f}' fill='{color}' />"
+            )
+        layers.append(
+            f"<text x='{group_start + inner_width / 2:.1f}' y='{height - margin + 18}' text-anchor='middle' font-size='11'>{method}</text>"
+        )
+
+    for index, series_name in enumerate(series):
+        legend_y = 44 + index * 18
+        color = palette[index % len(palette)]
+        legend.append(f"<rect x='{width - 220}' y='{legend_y}' width='12' height='12' fill='{color}' />")
+        legend.append(
+            f"<text x='{width - 200}' y='{legend_y + 10}' font-size='12' font-family='Arial'>{series_name}</text>"
+        )
+
+    body = "".join(layers) + "".join(legend) + f"<text x='{margin - 10}' y='{margin - 12}' text-anchor='start' font-size='11'>{y_label}</text>"
+    path.write_text(_svg_shell(title, width, height, body), encoding="utf-8")

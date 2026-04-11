@@ -1,4 +1,4 @@
-"""Standardized Day 8 baseline evaluation entrypoint."""
+"""Standardized Day 9 evaluation package entrypoint."""
 
 from __future__ import annotations
 
@@ -17,10 +17,12 @@ if str(PROJECT_ROOT) not in sys.path:
 from evaluation.metrics import (
     aggregate_final_metrics,
     aggregate_metric_curves,
+    aggregate_threshold_hit_times,
     build_run_metrics,
+    compute_seed_stability,
 )
-from evaluation.plotting import write_bar_svg, write_curve_svg
-from evaluation.report import write_analysis_note
+from evaluation.plotting import write_bar_svg, write_curve_svg, write_grouped_bar_svg
+from evaluation.report import write_analysis_note, write_summary_csv, write_summary_latex
 from loop.runner import ClosedLoopRunner
 from utils.config import ConfigNode, dump_yaml, load_config, stable_config_hash
 from utils.device import resolve_device
@@ -30,7 +32,7 @@ from utils.seed import set_global_seed
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the Day 8 baseline evaluation suite."
+        description="Run the Day 9 evaluation package over baseline methods."
     )
     parser.add_argument(
         "--config",
@@ -108,7 +110,7 @@ def derive_run_config(base_config: ConfigNode, acquisition_name: str, seed: int,
     config_dict.setdefault("experiment", {})
     config_dict["experiment"]["name"] = run_name
     config_dict["experiment"]["description"] = (
-        f"Day 8 baseline run for acquisition={acquisition_name}, seed={seed}."
+        f"Day 9 evaluation run for acquisition={acquisition_name}, seed={seed}."
     )
     config_dict.setdefault("runtime", {})
     config_dict["runtime"]["seed"] = int(seed)
@@ -190,7 +192,8 @@ def main() -> int:
     experiment_section = config.experiment.to_dict()
     seeds = [int(value) for value in experiment_section.get("random_seeds", [7])]
     methods = [str(value).strip().lower() for value in experiment_section.get("baseline_methods", ["random", "greedy", "ucb"])]
-    logger.info("Starting Day 8 baseline suite: methods=%s seeds=%s", methods, seeds)
+    threshold_fractions = [float(value) for value in experiment_section.get("threshold_fractions_of_global_best", [0.5, 0.8, 0.95])]
+    logger.info("Starting Day 9 evaluation package: methods=%s seeds=%s", methods, seeds)
 
     run_metrics_by_method: dict[str, list[dict[str, Any]]] = defaultdict(list)
     subrun_index: list[dict[str, Any]] = []
@@ -214,7 +217,12 @@ def main() -> int:
             method_summary = summary["loop_suite_summary"]["methods"][method]
             loop_summary_path = Path(method_summary["paths"]["rounds_jsonl"]).with_name(f"{method}_loop_summary.json")
             rounds_jsonl_path = Path(method_summary["paths"]["rounds_jsonl"])
-            run_metrics = build_run_metrics(loop_summary_path, rounds_jsonl_path, split_statistics)
+            run_metrics = build_run_metrics(
+                loop_summary_path,
+                rounds_jsonl_path,
+                split_statistics,
+                threshold_fractions=threshold_fractions,
+            )
             run_metrics["seed"] = int(seed)
             run_metrics["run_dir"] = str(subrun_dir)
             run_metrics["method"] = method
@@ -234,23 +242,53 @@ def main() -> int:
     final_metric_summary = aggregate_final_metrics(run_metrics_by_method)
     best_so_far_curves = aggregate_metric_curves(run_metrics_by_method, "best_so_far_curve", "best_so_far")
     simple_regret_curves = aggregate_metric_curves(run_metrics_by_method, "simple_regret_curve", "simple_regret")
+    sample_efficiency_curves = aggregate_metric_curves(run_metrics_by_method, "sample_efficiency_curve", "sample_efficiency")
     selected_sigma_curves = aggregate_metric_curves(run_metrics_by_method, "round_selection_stats", "mean_predicted_sigma")
     selected_fitness_curves = aggregate_metric_curves(run_metrics_by_method, "round_selection_stats", "mean_true_fitness")
+    threshold_hit_summary = aggregate_threshold_hit_times(run_metrics_by_method)
+    seed_stability = compute_seed_stability(run_metrics_by_method)
 
     best_curve_path = layout["plots_dir"] / "baseline_best_so_far.svg"
     regret_curve_path = layout["plots_dir"] / "baseline_simple_regret.svg"
+    sample_efficiency_curve_path = layout["plots_dir"] / "baseline_sample_efficiency.svg"
     sigma_curve_path = layout["plots_dir"] / "baseline_selected_sigma.svg"
     fitness_curve_path = layout["plots_dir"] / "baseline_selected_true_fitness.svg"
     final_best_bar_path = layout["plots_dir"] / "baseline_final_best_so_far_bar.svg"
-    write_curve_svg(best_curve_path, "Day 8 baseline: best-so-far vs budget", best_so_far_curves, "best-so-far")
-    write_curve_svg(regret_curve_path, "Day 8 baseline: simple regret vs budget", simple_regret_curves, "simple regret")
-    write_curve_svg(sigma_curve_path, "Day 8 baseline: selected sigma by round", selected_sigma_curves, "selected sigma")
-    write_curve_svg(fitness_curve_path, "Day 8 baseline: selected true fitness by round", selected_fitness_curves, "selected true fitness")
+    stage_efficiency_bar_path = layout["plots_dir"] / "baseline_stage_efficiency.svg"
+    stability_bar_path = layout["plots_dir"] / "baseline_seed_stability.svg"
+    write_curve_svg(best_curve_path, "Day 9 evaluation: best-so-far vs budget", best_so_far_curves, "best-so-far")
+    write_curve_svg(regret_curve_path, "Day 9 evaluation: simple regret vs budget", simple_regret_curves, "simple regret")
+    write_curve_svg(
+        sample_efficiency_curve_path,
+        "Day 9 evaluation: sample efficiency vs budget",
+        sample_efficiency_curves,
+        "sample efficiency",
+    )
+    write_curve_svg(sigma_curve_path, "Day 9 evaluation: selected sigma by round", selected_sigma_curves, "selected sigma")
+    write_curve_svg(fitness_curve_path, "Day 9 evaluation: selected true fitness by round", selected_fitness_curves, "selected true fitness")
     write_bar_svg(
         final_best_bar_path,
-        "Day 8 baseline: final best-so-far mean",
+        "Day 9 evaluation: final best-so-far mean",
         {method: summary["final_best_so_far_mean"] for method, summary in final_metric_summary.items()},
         "final best-so-far mean",
+    )
+    write_grouped_bar_svg(
+        stage_efficiency_bar_path,
+        "Day 9 evaluation: early vs late stage sample efficiency",
+        {
+            method: {
+                "early": summary["early_stage_sample_efficiency_mean"],
+                "late": summary["late_stage_sample_efficiency_mean"],
+            }
+            for method, summary in final_metric_summary.items()
+        },
+        "sample efficiency",
+    )
+    write_bar_svg(
+        stability_bar_path,
+        "Day 9 evaluation: cross-seed std of final best-so-far",
+        {method: summary["seed_std"] for method, summary in seed_stability.items()},
+        "seed std",
     )
 
     checks: dict[str, Any] = {}
@@ -272,8 +310,15 @@ def main() -> int:
             final_metric_summary["ucb"]["final_best_so_far_mean"]
             >= final_metric_summary["random"]["final_best_so_far_mean"]
         )
+    if "ucb" in final_metric_summary and "greedy" in final_metric_summary:
+        checks["ucb_prefers_higher_sigma_than_greedy"] = (
+            final_metric_summary["ucb"]["selected_sigma_mean"]
+            > final_metric_summary["greedy"]["selected_sigma_mean"]
+        )
 
     analysis_note_path = layout["report_dir"] / "baseline_analysis_note.md"
+    summary_csv_path = layout["tables_dir"] / "baseline_summary_table.csv"
+    summary_latex_path = layout["tables_dir"] / "baseline_summary_table.tex"
     write_analysis_note(
         path=analysis_note_path,
         experiment_name=config.experiment.name,
@@ -283,22 +328,45 @@ def main() -> int:
         final_metric_summary=final_metric_summary,
         checks=checks,
     )
+    write_summary_csv(
+        summary_csv_path,
+        methods,
+        final_metric_summary,
+        threshold_hit_summary,
+        seed_stability,
+    )
+    write_summary_latex(
+        summary_latex_path,
+        methods,
+        final_metric_summary,
+        seed_stability,
+    )
 
     summary = {
         "experiment_name": str(config.experiment.name),
         "experiment_dir": str(experiment_dir),
         "methods": methods,
         "random_seeds": seeds,
+        "threshold_fractions_of_global_best": threshold_fractions,
         "dataset": str(config.dataset.registry_name),
         "split_type": str(config.dataset.split_type),
         "final_metric_summary": final_metric_summary,
+        "threshold_hit_summary": threshold_hit_summary,
+        "seed_stability": seed_stability,
         "checks": checks,
         "plots": {
             "best_so_far_curve": str(best_curve_path),
             "simple_regret_curve": str(regret_curve_path),
+            "sample_efficiency_curve": str(sample_efficiency_curve_path),
             "selected_sigma_curve": str(sigma_curve_path),
             "selected_true_fitness_curve": str(fitness_curve_path),
             "final_best_bar": str(final_best_bar_path),
+            "stage_efficiency_bar": str(stage_efficiency_bar_path),
+            "seed_stability_bar": str(stability_bar_path),
+        },
+        "tables": {
+            "summary_csv": str(summary_csv_path),
+            "summary_latex": str(summary_latex_path),
         },
         "analysis_note_path": str(analysis_note_path),
         "subruns": subrun_index,
@@ -306,7 +374,7 @@ def main() -> int:
         "successful": True,
     }
     write_json(layout["artifacts_dir"] / "baseline_summary.json", summary)
-    logger.info("Day 8 baseline suite completed successfully. Summary at %s", layout["artifacts_dir"] / "baseline_summary.json")
+    logger.info("Day 9 evaluation package completed successfully. Summary at %s", layout["artifacts_dir"] / "baseline_summary.json")
     return 0
 
 

@@ -10,7 +10,9 @@ from pathlib import Path
 from evaluation.metrics import (
     aggregate_final_metrics,
     aggregate_metric_curves,
+    aggregate_threshold_hit_times,
     build_run_metrics,
+    compute_seed_stability,
 )
 
 
@@ -80,6 +82,7 @@ class EvaluationMetricsTest(unittest.TestCase):
             self.assertAlmostEqual(metrics["final_simple_regret"], 0.5)
             self.assertAlmostEqual(metrics["average_round_improvement"], 0.5)
             self.assertEqual(len(metrics["round_selection_stats"]), 2)
+            self.assertEqual(len(metrics["sample_efficiency_curve"]), 3)
 
     def test_aggregate_helpers_average_across_seeds(self) -> None:
         run_metrics = {
@@ -88,9 +91,18 @@ class EvaluationMetricsTest(unittest.TestCase):
                     "final_best_so_far": 1.2,
                     "final_simple_regret": 0.4,
                     "best_improvement": 0.7,
+                    "threshold_hit_times": {"0.50": 1.0},
+                    "stage_metrics": {
+                        "early_stage_sample_efficiency": 0.7,
+                        "late_stage_sample_efficiency": 0.0,
+                    },
                     "best_so_far_curve": [
                         {"step": 0.0, "best_so_far": 0.5},
                         {"step": 1.0, "best_so_far": 1.2},
+                    ],
+                    "sample_efficiency_curve": [
+                        {"step": 0.0, "sample_efficiency": 0.0},
+                        {"step": 1.0, "sample_efficiency": 0.7},
                     ],
                     "round_selection_stats": [
                         {"step": 0.0, "mean_predicted_sigma": 0.2, "mean_true_fitness": 0.8},
@@ -100,9 +112,18 @@ class EvaluationMetricsTest(unittest.TestCase):
                     "final_best_so_far": 1.4,
                     "final_simple_regret": 0.2,
                     "best_improvement": 0.9,
+                    "threshold_hit_times": {"0.50": 1.0},
+                    "stage_metrics": {
+                        "early_stage_sample_efficiency": 0.9,
+                        "late_stage_sample_efficiency": 0.0,
+                    },
                     "best_so_far_curve": [
                         {"step": 0.0, "best_so_far": 0.6},
                         {"step": 1.0, "best_so_far": 1.4},
+                    ],
+                    "sample_efficiency_curve": [
+                        {"step": 0.0, "sample_efficiency": 0.0},
+                        {"step": 1.0, "sample_efficiency": 0.9},
                     ],
                     "round_selection_stats": [
                         {"step": 0.0, "mean_predicted_sigma": 0.3, "mean_true_fitness": 0.9},
@@ -112,9 +133,13 @@ class EvaluationMetricsTest(unittest.TestCase):
         }
         curve = aggregate_metric_curves(run_metrics, "best_so_far_curve", "best_so_far")
         final_summary = aggregate_final_metrics(run_metrics)
+        threshold_summary = aggregate_threshold_hit_times(run_metrics)
+        stability = compute_seed_stability(run_metrics)
         self.assertAlmostEqual(curve["greedy"][1]["mean"], 1.3)
         self.assertAlmostEqual(final_summary["greedy"]["final_best_so_far_mean"], 1.3)
         self.assertAlmostEqual(final_summary["greedy"]["selected_sigma_mean"], 0.25)
+        self.assertAlmostEqual(threshold_summary["greedy"]["0.50"]["hit_rate"], 1.0)
+        self.assertAlmostEqual(stability["greedy"]["seed_std"], 0.1)
 
 
 if __name__ == "__main__":

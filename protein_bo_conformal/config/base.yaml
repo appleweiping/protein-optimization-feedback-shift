@@ -1,6 +1,6 @@
 experiment:
-  name: day8-baseline-evidence
-  description: "Baseline evaluation stage for offline protein optimization under feedback shift."
+  name: day9-evaluation-package
+  description: "Expanded evaluation stage for offline protein optimization under feedback shift."
 
 runtime:
   seed: 7
